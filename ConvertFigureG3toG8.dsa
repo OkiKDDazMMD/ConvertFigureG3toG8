@@ -1,0 +1,660 @@
+// DAZ Studio version 4.10.0.123 filetype DAZ Script
+
+	// 
+	var nMaxSelectedSkeletons = Scene.getNumSelectedSkeletons();
+
+	if(nMaxSelectedSkeletons>1 || nMaxSelectedSkeletons<1){
+		MessageBox.critical( qsTr("Selected Only Genesis 8"), qsTr("Critical"), qsTr("&OK") );
+		return;
+	}
+
+	var g_oSkeletonG8F = Scene.getSelectedSkeleton(0);
+	if(g_oSkeletonG8F.name.indexOf("Genesis8")<0){
+		MessageBox.critical( qsTr("Selected Only Genesis 8"), qsTr("Critical"), qsTr("&OK") );
+		return;
+	}
+
+	//
+	var g_wEditOutputFolder;
+	var g_wEditInputFolder;
+	var g_wListViewFile;
+	var g_wEditVendorName;
+	var g_wEditProductName;
+	var g_FolderName;
+
+	//
+	var g_aFileData = null;
+	var g_nState = 0;
+	var g_sScriptFileName = DzFile(getScriptFileName());
+	var sInitializeFileName = g_sScriptFileName.path() + "/." + g_sScriptFileName.baseName() + ".ini";
+	var g_oInitializeFile = DzFile( sInitializeFileName );
+	
+	// Get the content manager
+	var g_oContentMgr = App.getContentMgr();
+ 
+	//Load Initialize Data
+	var g_InitializeData = loadData(g_oInitializeFile);
+	if (!g_InitializeData){
+	    	//
+		g_InitializeData = Object();
+
+		//
+		g_InitializeData.inputPath = g_oContentMgr.getContentDirectoryPath( 0 );
+		g_InitializeData.outputPath = g_InitializeData.inputPath;
+		g_InitializeData.Author = App.getCurrentAuthor().name;
+		g_InitializeData.Product = "ConvertG8F/G3F/Clothes";
+
+		//
+		saveData(g_InitializeData, g_oInitializeFile);
+	}
+
+	// Create a basic dialog
+	var oDlg = new DzBasicDialog();
+
+	// Get the wrapped widget for the dialog
+	var oDlgWgt = oDlg.getWidget();
+	
+	// Set the title of the dialog
+	oDlg.caption = "Convert Figure G3F to G8F";
+	
+	// Strip the space for a settings key
+	var sKey = oDlg.caption.replace( / /g, "" ) + "Dlg";
+	
+	// Set an [unique] object name on the wrapped dialog widget;
+	// this is used for recording position and size separately
+	// from all other [uniquely named] DzBasicDialog instances
+	oDlgWgt.objectName = sKey;
+
+	var oVGBDlg = new DzVGroupBox( oDlg );
+
+	//
+	var wVGBInputFolder = new DzVGroupBox( oVGBDlg );
+	wVGBInputFolder.title = "Input Folder :";
+	wVGBInputFolder.columns = 2;
+	g_wEditInputFolder = new DzLineEdit( wVGBInputFolder );
+	g_wEditInputFolder.minWidth = 200;
+	g_wEditInputFolder.text = g_InitializeData.inputPath;
+	g_wEditInputFolder.readOnly = true
+	var wButtonInputFolder = addButtonOnGroupBox( wVGBInputFolder, "Select Folder", selectFolderInputPath );
+
+	//
+	var wVGBG3Ffile = new DzVGroupBox( oVGBDlg );
+	wVGBG3Ffile.title = "G3F File :";
+	var wButtonSearch = addButtonOnGroupBox( wVGBG3Ffile, "File Search", fileSearch);
+	g_wListViewFile = new DzListView(wVGBG3Ffile);
+	g_wListViewFile.addColumn( "File" );
+	g_wListViewFile.allColumnsShowFocus = true;
+	var wButtonLoad = addButtonOnGroupBox( wVGBG3Ffile, "Load", loadProcess);
+	wButtonLoad.enabled = false;
+
+	//
+	var wVGBSave = new DzVGroupBox( oVGBDlg );
+	wVGBSave.title = "Save Setting :";
+	var wGridLayoutSave = new DzGridLayout( wVGBSave )
+	var wSaveLabel1 = new DzLabel( wVGBSave );
+	wSaveLabel1.text = "Output Folder :";
+	wGridLayoutSave.addWidget(wSaveLabel1, 0, 0);
+
+	g_wEditOutputFolder = new DzLineEdit( wVGBSave );
+	g_wEditOutputFolder.minWidth = 200;
+	g_wEditOutputFolder.text = g_InitializeData.outputPath;
+	g_wEditOutputFolder.readOnly = true
+	wGridLayoutSave.addWidget(g_wEditOutputFolder, 1, 0);
+	var wButtonOutFolder = addButtonOnGroupBox( wVGBSave, "Select Folder", selectFolderOutputPath );
+	wGridLayoutSave.addWidget(wButtonOutFolder, 1, 1);
+
+	var wSaveLabel2 = new DzLabel( wVGBSave );
+	wSaveLabel2.text = "Vendor Name :";
+	wGridLayoutSave.addWidget(wSaveLabel2, 2, 0);
+	g_wEditVendorName = new DzLineEdit( wVGBSave );
+	g_wEditVendorName.minWidth = 200;
+	g_wEditVendorName.text = g_InitializeData.Author;
+	connect(g_wEditVendorName, "editingFinished()", editingFinishedVendorName);
+	wGridLayoutSave.addWidget(g_wEditVendorName, 2, 1);
+
+	var wSaveLabel3 = new DzLabel( wVGBSave );
+	wSaveLabel3.text = "Product Name :";
+	wGridLayoutSave.addWidget(wSaveLabel3, 3, 0);
+	g_wEditProductName = new DzLineEdit( wVGBSave );
+	g_wEditProductName.minWidth = 200;
+	g_wEditProductName.text = g_InitializeData.Product;
+	connect(g_wEditProductName, "editingFinished()", editingFinishedProductName);
+	wGridLayoutSave.addWidget(g_wEditProductName, 3, 1);
+
+	var wButtonSave = addButtonOnGroupBox( wVGBSave, "Save", saveProcess);
+	wButtonSave.enabled = false;
+	wGridLayoutSave.addWidget(wButtonSave, 4, 0);
+
+	//
+	var wTextBrowser = new DzTextEdit(oVGBDlg);
+	wTextBrowser.readOnly = true;
+	var oTextBrowser = wTextBrowser.getWidget();
+	wTextBrowser.objectName = String("%1LocalLView").arg( sKey );
+
+
+
+//http://docs.daz3d.com/doku.php/artzone/wiki/user/rbtwhiz/technotes/daz_script/node_properties/start
+//Getting the properties associated with a node.
+
+	// Add the GroupBox to the dialog
+	oDlg.addWidget( oVGBDlg, 0, DzWidget.AlignCenter );
+
+	// Get the minimum size of the dialog
+	var sizeHint = oDlgWgt.minimumSizeHint;
+	
+	// Set the fixed size of the dialog
+//	oDlg.setFixedSize( sizeHint.width, sizeHint.height );
+	
+	// Set the text on the accept button
+	oDlg.setAcceptButtonText("Close");
+	// Hide the cancel button
+	oDlg.showCancelButton( false );
+
+	oDlg.exec();
+
+
+/*********************************************************************/
+// 
+/*********************************************************************/
+function loadData(oLoadFile)
+{
+	if (! oLoadFile.exists()){
+	    return false;
+	}
+
+	oLoadFile.open(DzFile.ReadOnly);
+	var sJSONInit = oLoadFile.read();
+	oLoadFile.close();
+	var obj = JSON.parse( sJSONInit );
+	return obj;
+}
+
+
+/*********************************************************************/
+// 
+/*********************************************************************/
+function saveData(obj, oSaveFile){
+	var sJSONData = JSON.stringify(obj, undefined, "\t");
+	oSaveFile.open(DzFile.WriteOnly);
+	oSaveFile.writeLine( sJSONData );
+	oSaveFile.close();
+}
+
+
+/*********************************************************************/
+//
+/*********************************************************************/
+function selectFolderInputPath(){
+	var path = FileDialog.doDirectoryDialog("Select a Folder for the rendered", ""
+									, g_InitializeData.inputPath );
+	if( path ){
+		g_InitializeData.inputPath = path;
+		g_wEditInputFolder.text = path;
+		var oFileInfo = new DzFileInfo( path );
+		g_FolderName = oFileInfo.completeBaseName();
+//		wTextBrowser.append( String('Folder Name=%1').arg( g_FolderName ) );
+		saveData(g_InitializeData, g_oInitializeFile);
+	}
+}
+
+
+/*********************************************************************/
+//
+/*********************************************************************/
+function selectFolderOutputPath(){
+	var path = FileDialog.doDirectoryDialog("Select a Folder for the rendered", ""
+									, g_InitializeData.outputPath );
+	if( path ){
+		g_InitializeData.outputPath = path;
+		g_wEditOutputFolder.text = path;
+		saveData(g_InitializeData, g_oInitializeFile);
+	}
+}
+
+
+/*********************************************************************/
+//
+/*********************************************************************/
+function fileSearch(){
+	var oDir = new DzDir(g_InitializeData.inputPath );
+	var aFullPath = oDir.getFilesFromDir(["*.duf"], false);
+	var tempCheckListItem;
+
+	g_nState = 1;
+	wButtonLoad.enabled = true;
+	wButtonSave.enabled = false;
+	g_wListViewFile.clear();
+
+	if(aFullPath.length>0){
+		g_aFileData = new Array();
+		for( var loop = 0; loop < aFullPath.length; loop++ ){
+			var oFileInfo = new DzFileInfo( aFullPath[loop] );
+			tempCheckListItem = new DzCheckListItem(g_wListViewFile, DzCheckListItem.CheckBox, loop);
+			tempCheckListItem.setText( 0, oFileInfo.fileName() );
+			tempCheckListItem.on = true;
+			var oFileData = Object();
+			oFileData.CheckListItem = tempCheckListItem;
+			oFileData.FileInfo = oFileInfo;
+			g_aFileData.push(oFileData);
+		}
+	}
+
+}
+
+/*********************************************************************/
+//
+/*********************************************************************/
+function loadProcess(){
+	var tempCheckListItem;
+	var atempFileData
+
+	if(g_wEditInputFolder.text.length>0){
+		g_InitializeData.inputPath = g_wEditInputFolder.text;
+		var oFileInfo = new DzFileInfo( g_InitializeData.inputPath );
+		g_FolderName = oFileInfo.completeBaseName();
+		saveData(g_InitializeData, g_oInitializeFile);
+	}else{
+		return;
+	}
+
+	g_nState = 2;
+	wButtonLoad.enabled = false;
+	wButtonSave.enabled = true;
+
+	if(g_aFileData.length>0){
+		atempFileData = new Array();
+		for( var loop = 0; loop < g_aFileData.length; loop++ ){
+			if(g_aFileData[loop].CheckListItem.on){
+				Scene.selectAllNodes( false );
+				g_oContentMgr.openFile(g_aFileData[loop].FileInfo.absoluteFilePath() , true);
+
+				var oFigure = Scene.getPrimarySelection();
+
+				if(oFigure){
+					var oFileData = Object();
+
+					if( inheritsType( oFigure, ["DzSkeleton"] ) ){
+						oFileData.Figure = "Figure";
+						var oPresentation = oFigure.getPresentation();
+						oFileData.preferredBase = oPresentation.preferredBase;
+						oFileData.type = oPresentation.type;
+					}else{
+						oFileData.Figure = "";
+					}
+
+					oFileData.CheckListItem = null;
+					oFileData.Node = oFigure;
+					oFileData.FileInfo = g_aFileData[loop].FileInfo;
+					atempFileData.push(oFileData);
+				}
+			} 
+		}
+	}
+
+	g_wListViewFile.clear();
+	g_wListViewFile.addColumn( "Figure" );
+	g_wListViewFile.addColumn( "Base" );
+	g_wListViewFile.addColumn( "Type" );
+	g_wListViewFile.addColumn( "Name" );
+
+	for( var loop = 0; loop < atempFileData.length; loop++ ){
+		tempCheckListItem = new DzCheckListItem(g_wListViewFile, DzCheckListItem.CheckBox, loop);
+		tempCheckListItem.setText( 0, atempFileData[loop].Node.getLabel() );
+		tempCheckListItem.setText( 1, atempFileData[loop].Figure );
+		if(atempFileData[loop].Figure == "Figure"){
+			tempCheckListItem.on = true;
+		}
+		tempCheckListItem.setText( 2, atempFileData[loop].preferredBase );
+		tempCheckListItem.setText( 3, atempFileData[loop].type );
+		tempCheckListItem.setText( 4, atempFileData[loop].FileInfo.completeBaseName() );
+		atempFileData[loop].CheckListItem = tempCheckListItem;
+	}
+
+	g_aFileData = atempFileData;
+}
+
+/*********************************************************************/
+//
+/*********************************************************************/
+function addButtonOnGroupBox( gb, text, func ){
+	var wButton = new DzPushButton( gb );
+	wButton.text = text;
+	connect( wButton, "clicked()", func );
+	return( wButton );
+}
+
+
+/*********************************************************************/
+// Boolean : A function for testing whether or not a QObject instance
+// inherits one of a list of types
+function inheritsType( oObject, aTypeNames )
+{
+	// If the object does not define the 'inherits' function
+	if( !oObject || typeof( oObject.inherits ) != "function" ){
+		// We are done... it is not a QObject
+		return false;
+	}
+ 
+	// Iterate over the list of type names
+	for( var i = 0, nTypes = aTypeNames.length; i < nTypes; i += 1 ){
+		// If the object does not inherit the 'current' type
+		if( !oObject.inherits( aTypeNames[i] ) ){
+			// Next!!
+			continue;
+		}
+
+		// Return the result
+		return true;
+	}
+ 
+	// Return the result
+	return false;
+};
+
+
+/*********************************************************************/
+// DzNode : A function for getting the root of a node
+function getRootNode( oNode )
+{
+	// If we have a node and it is a bone
+	if( oNode && inheritsType( oNode, ["DzBone"] ) ){
+		// We want the skeleton
+		return oNode.getSkeleton();
+	}
+ 
+	// Return the original node
+	return oNode;
+};
+
+
+/*********************************************************************/
+// void : A function for setting the support path options
+function setSupportPathOptions( oSettings, oNode, sBaseDataPath, sVendorName, sProductName, sItemName, sContentType )
+{
+	// Set base path for support assets to be saved to
+	oSettings.setStringValue( "BaseDataPath", sBaseDataPath );
+
+	// Set the vendor to the registered author
+	var sVendor = App.getCurrentAuthor().name;
+	// If a name was specified
+	if( !sVendorName.isEmpty() ){
+		// Use the specified name
+		sVendor = sVendorName;
+	}
+
+	// If we still do not have a name
+	if( sVendor.isEmpty() ){
+		// Use a default
+		sVendor = "Test Vendor";
+	}
+
+	// Set the vendor
+	oSettings.setStringValue( "VendorName", sVendor );
+
+	// If the product name is a non-empty string
+	if( typeof( sProductName ) == "string" && !sProductName.isEmpty() ){
+		// Set the product name to the one passed in
+		oSettings.setStringValue( "ProductName", sProductName );
+	// Otherwise
+	} else {
+		// Set the product name to a default
+		oSettings.setStringValue( "ProductName", "Test Product" );
+	}
+
+	// If the item name is not empty
+	if( typeof( sItemName ) == "string" && !sItemName.isEmpty() ){
+		// Set the item name
+		oSettings.setStringValue( "ItemName", sItemName );
+	}
+
+	// If the content type is not empty
+	if( typeof( sContentType ) == "string" && !sContentType.isEmpty() ){
+		// Set the content type
+		oSettings.setStringValue( "ContentType", sContentType );
+	// If the content type is empty or invalid
+	} else {
+		// Get the content type from the node
+		var sType = getContentType( oNode );
+		// If the content type is not empty
+		if( !sType.isEmpty() ){
+			// Set the content type
+			oSettings.setStringValue( "ContentType", sType );
+			wTextBrowser.append( String( 'ContentType=%1' ).arg( sType ) );
+		}
+	}
+
+	// Set the initial state of the compress file checkbox
+	oSettings.setBoolValue( "CompressOutput", true );
+ 
+	// Do not to show the options
+	oSettings.setBoolValue( "RunSilent", true );
+};
+
+
+/*********************************************************************/
+// String : A function for getting the content type of a node
+function getContentType( oNode )
+{
+	// If we do not have a node
+	if( !oNode ){
+		// Return an empty string
+		return "";
+	}
+ 
+	// Get the presentation
+	var oPresentation = oNode.getPresentation();
+	// If we do not have a presentation
+	if( !oPresentation ){
+		// Return an empty string
+		return "";
+	}
+ 
+	// Return the content type
+	return oPresentation.type;		
+};
+
+ 
+/*********************************************************************/
+// String : A function for getting the compatibility base of a node
+function getCompatibilityBase( oNode )
+{
+	// If we do not have a node
+	if( !oNode ){
+		// Return an empty string
+		return "";
+	}
+ 
+	// Get the asset manager
+	var oAssetMgr = App.getAssetMgr();
+	// Return the compatibility base from the node
+	return oAssetMgr.getCompatibilityBasePathForNode( oNode );
+};
+
+
+/*********************************************************************/
+// void : A function for setting the default options
+function setDefaultOptions( oSettings, sRootLabel )
+{
+	// If the root label is not empty
+	if( !sRootLabel.isEmpty() ){
+		// Set the label of the root node to find it in the scene;
+		// this can be used to override selection within the scene
+		oSettings.setStringValue( "RootLabel", sRootLabel );
+	}
+};
+ 
+
+/*********************************************************************/
+//
+function saveFigure(oFileData)
+{
+
+	// Get the asset IO manager
+	var oAssetIOMgr = App.getAssetIOMgr();
+	// Define the class name of the asset filter we want to use
+	var sClassName = "DzNodeSupportAssetFilter";
+	// Find the index of the asset filter with the class name we want
+	var nAssetIOFilter = oAssetIOMgr.findFilter( sClassName );
+	// If we did not find an asset filter with the class name we wanted
+	if( nAssetIOFilter < 0 ){
+		// Inform the user
+		MessageBox.critical( text( "An asset filter with the class name " +
+			"\"%1\" could not be found.").arg( sClassName ),
+			text( "Critical Error" ), text( "&OK" ) );
+ 
+		// We are done...
+		return;
+	}
+ 
+	// Get the asset filter at the prescribed index
+	var oAssetIOFilter = oAssetIOMgr.getFilter( nAssetIOFilter );
+	// If we do not have a valid asset filter
+	if( !oAssetIOFilter ){
+		// Inform the user
+		MessageBox.critical( text( "An asset filter with the class name " +
+			"\"%1\" could not be found.").arg( sClassName ),
+			text( "Critical Error" ), text( "&OK" ) );
+ 
+		// We are done...
+		return;
+	}
+ 
+	// Create a settings object
+	var oSettings = new DzFileIOSettings();
+ 
+	// Get the default settings
+	oAssetIOFilter.getDefaultOptions( oSettings );
+ 
+	// Change Presentation
+	var oRootNode = oFileData.Node;
+
+	var oPresentation = oRootNode.getPresentation();
+	if( oPresentation ){
+		oNewPresentation = new DzPresentation();
+		oNewPresentation.preferredBase = "/Genesis 8/Female";
+		oNewPresentation.type = oPresentation.type;
+		oRootNode.setPresentation( oNewPresentation );
+	}else{
+		wTextBrowser.append("No Presentation");
+		return;
+	}
+
+	//Transfer Rigging (Figure Space)
+	var oActionMgr = MainWindow.getActionMgr();
+	var oFunc = oActionMgr.findAction ("DzJETransferWSRiggingAction")
+	if( oFunc ){
+		Scene.selectAllNodes( false );
+		g_oSkeletonG8F.select( true );
+		oRootNode.select( true );
+		oFunc.trigger();
+	}else{
+		wTextBrowser.append("No Transfer Rigging");
+		return;
+	}
+	oRootNode.setFollowTarget(g_oSkeletonG8F);
+	var oError1 = g_oSkeletonG8F.addNodeChild(oRootNode);
+	if( oError1.valueOf() != 0x00000000 ){
+		wTextBrowser.append( String( 'parent Error:%1' ).arg( getErrorMessage( oError1 ) ) );
+	}
+ 
+	// If we had a node selected, get its name otherwise use a default
+	var sRootLabel = (oRootNode ? oRootNode.getLabel() : "");
+ 
+	// Set the default options; this can be used to set
+	// options before the dialog is displayed
+	setDefaultOptions( oSettings, sRootLabel );
+ 
+	// Get the content manager
+	var oContentMgr = App.getContentMgr();
+ 
+	// Get the base path - the first mapped content directory
+	var sBasePath = oContentMgr.getContentDirectoryPath( 0 );
+
+	// Set the support path options;
+	// if the 3rd argument is "", the current author will be used
+	var sTempProductName = String( '%1/%2' ).arg( g_wEditProductName.text ).arg( g_FolderName );
+	setSupportPathOptions( oSettings, oRootNode, sBasePath, g_wEditVendorName.text, sTempProductName, oFileData.FileInfo.completeBaseName(), "" );
+ 
+	// Debug
+// 	wTextBrowser.append( String( 'Defaults:%1' ).arg( oSettings.toJsonString() ) );
+
+	// Get the content manager
+	var oContentMgr = App.getContentMgr();
+ 
+	oSettings.setBoolValue( "SmartParentProp", true );
+ 
+	// Debug
+//	wTextBrowser.append( String( 'Required:%1' ).arg( oSettings.toJsonString() ) );
+
+	// Construct the name of the file to save to; omit file extension
+	var sFile = String("%1/%2/%3").arg( g_wEditOutputFolder.text ).arg( g_FolderName ).arg( oFileData.FileInfo.fileName() );
+ 
+	// Use the asset manager to save a file, using the filter and defined settings
+	var oError = oAssetIOMgr.doSaveWithOptions( oAssetIOFilter, oSettings,
+		false, sFile, sBasePath, "" );
+ 
+	// If there was no error
+	if( oError.valueOf() == 0x00000000 ){
+		wTextBrowser.append( String( 'Saved:%1' ).arg( sFile ) );
+
+		var oFileDelete = new DzFileInfo( String("%1/%2/%3.duf.png").arg( g_wEditOutputFolder.text ).arg( g_FolderName ).arg( oFileData.FileInfo.completeBaseName() ) );
+		var resultDelFile = oFileDelete.remove();
+
+		var sFilePng1 = String("%1/%2.png").arg( oFileData.FileInfo.absolutePath() ).arg( oFileData.FileInfo.completeBaseName() );
+		var oFileInfoPng = new DzFileInfo(sFilePng1);
+		if( oFileInfoPng.exists() ){
+			var oFilePng = new DzFile(sFilePng1);
+			var sFilePng2 = String("%1/%2/%3.png").arg( g_wEditOutputFolder.text ).arg( g_FolderName ).arg( oFileData.FileInfo.completeBaseName() );
+			oFilePng.copy(sFilePng2);
+			wTextBrowser.append( String( 'Copy Png:%1' ).arg( sFilePng1 ) );
+		}
+
+		var sFileDufPng1 = String("%1/%2.duf.png").arg( oFileData.FileInfo.absolutePath() ).arg( oFileData.FileInfo.completeBaseName() );
+		var oFileInfoDufPng = new DzFileInfo(sFileDufPng1);
+		if( oFileInfoDufPng.exists() ){
+			var oFileDufPng = new DzFile(sFileDufPng1);
+			var sFileDufPng2 = String("%1/%2/%3.duf.png").arg( g_wEditOutputFolder.text ).arg( g_FolderName ).arg( oFileData.FileInfo.completeBaseName() );
+			oFileDufPng.copy(sFileDufPng2);
+			wTextBrowser.append( String( 'Copy .duf.Png:%1' ).arg( sFileDufPng1 ) );
+		}
+
+	// If there was an error
+	} else {
+		wTextBrowser.append( String( 'Error:%1' ).arg( getErrorMessage( oError ) ) );
+	}
+ 
+	// Clean up; do not leak memory
+	oAssetIOFilter.deleteLater();
+};
+
+
+/*********************************************************************/
+//
+function saveProcess()
+{
+	saveData(g_InitializeData, g_oInitializeFile);
+
+	if(g_aFileData){
+		for( var loop = 0; loop < g_aFileData.length; loop++ ){
+			if(g_aFileData[loop].CheckListItem.on){
+				saveFigure(g_aFileData[loop])
+			}
+		}
+	}
+};
+
+
+/*********************************************************************/
+//
+function editingFinishedVendorName()
+{
+	g_InitializeData.Author = g_wEditVendorName.text;
+};
+
+
+/*********************************************************************/
+//
+function editingFinishedProductName()
+{
+	g_InitializeData.Product = g_wEditProductName.text;
+};
